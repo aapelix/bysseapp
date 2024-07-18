@@ -1,37 +1,30 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+import NavBar from "@/components/navbar";
+import { Stack, Link } from "expo-router";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { View } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <SafeAreaProvider>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="map" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" />
       </Stack>
-    </ThemeProvider>
+      <View className="absolute bottom-5 left-3 w-screen items-center translate-y-2">
+        <View className="flex-row justify-center items-center gap-6 w-[90vw] bg-[#0f0f0f] rounded-full pb-5">
+          <Link className="text-white" href="/">
+            <Ionicons name="home-outline" size={32} color="white" />
+          </Link>
+          <Link className="text-white" href="/map">
+            <Ionicons name="map-outline" size={32} color="white" />
+          </Link>
+          <Link className="text-white" href="/settings">
+            <Ionicons name="settings-outline" size={32} color="white" />
+          </Link>
+        </View>
+      </View>
+    </SafeAreaProvider>
   );
 }
