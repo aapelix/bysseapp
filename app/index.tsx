@@ -4,14 +4,20 @@ import {
   ActivityIndicator,
   Button,
   TouchableOpacity,
+  ScrollView,
+  Image,
 } from "react-native";
 import { Link } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 // import MapView from "react-native-map-clustering";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { imageMapping } from "./imageMapping";
 import stopData from "./stops.json";
+import BottomSheet, {
+  BottomSheetScrollView,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
 
 import * as Location from "expo-location";
 
@@ -259,6 +265,52 @@ const darkModeStyle = [
   },
 ];
 
+function timeDifference(dateString: string) {
+  const now = new Date();
+  const targetDate = new Date(dateString);
+
+  // Ensure both are valid Date objects
+  if (isNaN(targetDate.getTime())) {
+    return "Invalid date";
+  }
+
+  const diffMs = targetDate.getTime() - now.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+
+  if (diffMinutes <= 0) {
+    return "";
+  } else if (diffMinutes <= 2) {
+    return "2min";
+  } else if (diffMinutes <= 5) {
+    return "5min";
+  } else if (diffMinutes <= 10) {
+    return "10min";
+  } else if (diffMinutes <= 20) {
+    return "20min";
+  } else {
+    const localHours = targetDate.getHours();
+    const localMinutes = targetDate.getMinutes();
+    return `${localHours}:${localMinutes < 10 ? "0" : ""}${localMinutes}`;
+  }
+}
+
+function extractNumberFromUrl(url: string) {
+  const parts = url.split("/");
+  return parts[parts.length - 1];
+}
+
+function findDataByShortName(url: string) {
+  const dataArray = stopData;
+  const extractedNumber = extractNumberFromUrl(url);
+
+  for (let i = 0; i < dataArray.length; i++) {
+    if (dataArray[i].shortName === extractedNumber) {
+      return dataArray[i];
+    }
+  }
+  return null;
+}
+
 export default function Index() {
   const [positions, setPositions] = useState([]);
   const [userLocation, setUserLocation] = useState<Location.LocationObject>();
@@ -274,6 +326,23 @@ export default function Index() {
   const [stops, setStops] = useState([]);
   const [showStops, setShowStops] = useState(false);
 
+  const bottomSheetRef = useRef<BottomSheet>(null);
+
+  // callbacks
+  const handleSheetChanges = useCallback((index: number) => {
+    console.log("handleSheetChanges", index);
+  }, []);
+
+  const handleOpenBottomSheet = () => {
+    setPopVis(true);
+    bottomSheetRef.current?.snapToIndex(1); // or 0 depending on your initial state
+  };
+
+  const handleCloseBottomSheet = () => {
+    bottomSheetRef.current?.close();
+    setPopVis(false);
+  };
+
   setInterval(() => {
     getPos();
   }, 5000);
@@ -288,14 +357,6 @@ export default function Index() {
   useEffect(() => {
     getPos();
   }, []);
-
-  async function getStops() {
-    const res = await fetch(
-      "https://data.itsfactory.fi/journeys/api/1/stop-points",
-    );
-    const stopData = await res.json();
-    setStops(stopData.body);
-  }
 
   useEffect(() => {
     (async () => {
@@ -333,6 +394,15 @@ export default function Index() {
     setShowStops(region.latitudeDelta <= 0.02);
     console.log(showStops);
   }
+
+  const renderItem = useCallback(
+    ({ item }) => (
+      <View>
+        <Text>{item.name}</Text>
+      </View>
+    ),
+    [],
+  );
 
   return (
     <View className="flex h-full items-center bg-black">
@@ -373,7 +443,7 @@ export default function Index() {
                   }
                   onPress={() => {
                     setpopUpJourney(journey);
-                    setPopVis(true);
+                    handleOpenBottomSheet();
                   }}
                 />
               );
@@ -407,22 +477,42 @@ export default function Index() {
           <ActivityIndicator />
         </View>
       )}
-      {popVis && popUpJourney && (
-        <View className="bg-black rounded-t-2xl bottom-0 absolute z-50 w-screen h-1/2">
-          <View className="relative w-full h-full">
-            <TouchableOpacity
-              className="absolute right-5 top-3 p-2 px-3 bg-white rounded-full z-50"
-              onPress={() => setPopVis(false)}
-            >
-              <Text>Close</Text>
-            </TouchableOpacity>
-            <View className="mt-4 ml-5">
-              <Text className="text-white text-2xl font-bold">
-                {popUpJourney.lineRef}
+      {popVis && (
+        <BottomSheet
+          ref={bottomSheetRef}
+          snapPoints={["30%", "50%"]}
+          onClose={handleCloseBottomSheet}
+          enablePanDownToClose
+        >
+          <BottomSheetView className="flex items-center relative">
+            <View className="left-5">
+              <Text className="text-2xl font-black">
+                Linja {popUpJourney?.lineRef}
+                <Image source={require("../assets/images/bus/null.png")} />
               </Text>
+              <Text className="text-zinc-500">{popUpJourney?.speed}km/h</Text>
             </View>
-          </View>
-        </View>
+          </BottomSheetView>
+          <BottomSheetScrollView>
+            {popUpJourney?.onwardCalls.map((call: OnwardCall) => {
+              const nextStopData = findDataByShortName(call.stopPointRef);
+
+              const arrival = timeDifference(call.expectedArrivalTime);
+
+              if (arrival !== "Invalid date") {
+                return (
+                  <View
+                    key={call.order}
+                    className="flex flex-row justify-between px-5"
+                  >
+                    <Text>{nextStopData?.name}</Text>
+                    <Text>{arrival}</Text>
+                  </View>
+                );
+              }
+            })}
+          </BottomSheetScrollView>
+        </BottomSheet>
       )}
     </View>
   );
