@@ -1,14 +1,49 @@
-import { Text, View, ActivityIndicator, Button } from "react-native";
+import {
+  Text,
+  View,
+  ActivityIndicator,
+  Button,
+  TouchableOpacity,
+} from "react-native";
 import { Link } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import busRouteData from "./routeids.json";
-import stopsData from "./stops.json";
+// import MapView from "react-native-map-clustering";
+import React, { useEffect, useState } from "react";
 import { imageMapping } from "./imageMapping";
+import stopData from "./stops.json";
 
 import * as Location from "expo-location";
 
+interface MonitoredVehicleJourney {
+  lineRef: string;
+  directionRef: string;
+  framedVehicleJourneyRef: {
+    dateFrameRef: string;
+    datedVehicleJourneyRef: string;
+  };
+  vehicleLocation: {
+    longitude: string;
+    latitude: string;
+  };
+  operatorRef: string;
+  bearing: string;
+  delay: string;
+  vehicleRef: string;
+  journeyPatternRef: string;
+  originShortName: string;
+  destinationShortName: string;
+  speed: string;
+  originAimedDepartureTime: string;
+  onwardCalls: OnwardCall[];
+}
+
+interface OnwardCall {
+  expectedArrivalTime: string;
+  expectedDepartureTime: string;
+  stopPointRef: string;
+  order: string;
+}
 interface Municipality {
   name: string;
   shortName: string;
@@ -22,11 +57,6 @@ interface Marker {
   shortName: string;
   tariffZone: string;
   url: string;
-}
-
-function sliceCoordinates(coord: string) {
-  const [lat, lon] = coord.split(",").map(Number);
-  return { latitude: lat, longitude: lon };
 }
 
 function isInTampere(lat: number, lon: number) {
@@ -238,13 +268,11 @@ export default function Index() {
     latitudeDelta: 0.1,
     longitudeDelta: 0.1,
   });
-  const [zoomLevel, setZoomLevel] = useState(0);
-
-  const [popupVis, setPopupVis] = useState(true);
-
-  const [visibleStops, setVisibleStops] = useState<Marker[]>([]);
-
   const [errorMsg, setErrorMsg] = useState<String>();
+  const [popUpJourney, setpopUpJourney] = useState<MonitoredVehicleJourney>();
+  const [popVis, setPopVis] = useState(false);
+  const [stops, setStops] = useState([]);
+  const [showStops, setShowStops] = useState(false);
 
   setInterval(() => {
     getPos();
@@ -257,14 +285,16 @@ export default function Index() {
     const pos = await res.json();
     setPositions(pos.body);
   }
-
   useEffect(() => {
     getPos();
   }, []);
 
-  function getNumberById(id: string) {
-    const item = busRouteData.find((obj) => obj.id == id);
-    return item ? item.number : null;
+  async function getStops() {
+    const res = await fetch(
+      "https://data.itsfactory.fi/journeys/api/1/stop-points",
+    );
+    const stopData = await res.json();
+    setStops(stopData.body);
   }
 
   useEffect(() => {
@@ -298,31 +328,20 @@ export default function Index() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (regionCoords) {
-      const { latitude, longitude, latitudeDelta, longitudeDelta } =
-        regionCoords;
-
-      const withinBounds = (marker: Marker) => {
-        const [markerLat, markerLng] = marker.location.split(",").map(Number);
-        return (
-          markerLat >= latitude - latitudeDelta &&
-          markerLat <= latitude + latitudeDelta &&
-          markerLng >= longitude - longitudeDelta &&
-          markerLng <= longitude + longitudeDelta
-        );
-      };
-
-      setVisibleStops(stopsData.filter(withinBounds));
-    }
-  }, [regionCoords]);
+  function onRegionChangeComplete(region) {
+    setRegionCoords(region);
+    setShowStops(region.latitudeDelta <= 0.02);
+    console.log(showStops);
+  }
 
   return (
-    <View className="flex h-full items-center justify-center">
+    <View className="flex h-full items-center bg-black">
       {userLocation && (
         <MapView
           provider={PROVIDER_GOOGLE}
           className="w-full h-full"
+          // clusterColor="#D9D9D9"
+          // clusterTextColor="#000000"
           customMapStyle={darkModeStyle}
           initialRegion={{
             latitude: regionCoords.latitude,
@@ -330,15 +349,12 @@ export default function Index() {
             latitudeDelta: regionCoords.latitudeDelta,
             longitudeDelta: regionCoords.longitudeDelta,
           }}
-          onRegionChangeComplete={setRegionCoords}
+          onRegionChangeComplete={onRegionChangeComplete}
         >
           {positions &&
             positions.map((bus, index) => {
-              // const number = getNumberById(marker.route_id);
-
-              // const imageSource = imageMapping[number];
-
-              const journey = bus.monitoredVehicleJourney;
+              const journey: MonitoredVehicleJourney =
+                bus.monitoredVehicleJourney;
               let routeNumber = null;
 
               const imageSource = imageMapping[parseInt(journey.lineRef)];
@@ -355,6 +371,24 @@ export default function Index() {
                       ? imageSource
                       : require("../assets/images/bus/null.png")
                   }
+                  onPress={() => {
+                    setpopUpJourney(journey);
+                    setPopVis(true);
+                  }}
+                />
+              );
+            })}
+
+          {showStops &&
+            stopData.map((stop, index) => {
+              return (
+                <Marker
+                  key={index}
+                  coordinate={{
+                    latitude: parseFloat(stop.location.split(",")[0]),
+                    longitude: parseFloat(stop.location.split(",")[1]),
+                  }}
+                  image={require("../assets/images/bus/stop.png")}
                 />
               );
             })}
@@ -366,28 +400,28 @@ export default function Index() {
             }}
             image={require("../assets/images/user.png")}
           />
-
-          {regionCoords.latitudeDelta <= 0.013 &&
-            visibleStops.map((stop, index) => {
-              const coords = sliceCoordinates(stop.location);
-
-              return (
-                <Marker
-                  key={index}
-                  coordinate={{
-                    latitude: coords.latitude,
-                    longitude: coords.longitude,
-                  }}
-                  image={require("../assets/images/bus/stop.png")}
-                />
-              );
-            })}
         </MapView>
       )}
       {!userLocation && (
-        <View>
+        <View className="w-screen h-screen flex justify-center items-center">
           <ActivityIndicator />
-          <Text>Getting location</Text>
+        </View>
+      )}
+      {popVis && popUpJourney && (
+        <View className="bg-black rounded-t-2xl bottom-0 absolute z-50 w-screen h-1/2">
+          <View className="relative w-full h-full">
+            <TouchableOpacity
+              className="absolute right-5 top-3 p-2 px-3 bg-white rounded-full z-50"
+              onPress={() => setPopVis(false)}
+            >
+              <Text>Close</Text>
+            </TouchableOpacity>
+            <View className="mt-4 ml-5">
+              <Text className="text-white text-2xl font-bold">
+                {popUpJourney.lineRef}
+              </Text>
+            </View>
+          </View>
         </View>
       )}
     </View>
